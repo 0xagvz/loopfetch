@@ -1,11 +1,28 @@
+#include <filesystem>
 #include <iostream>
 #include <string>
+#include <vector>
 #include "argparse/argparse.hpp"
 #include "core.hpp"
 
 int run_loopfetch(const std::string& path, int width, int height, int fps, std::string& output_path) {
     if (output_path.empty()) {
-        // Save in cache folder with hashed frame (to-do function)
+        output_path = cache_dir_for(path, width, height, fps);
+        std::cout << "Using cache dir: " << output_path << std::endl;
+    }
+
+    const std::string key = cache_key_for(path, width, height, fps);
+    if (is_cached(output_path, key)) {
+        const std::string cache_path =
+            (std::filesystem::path(output_path) / CACHE_FILENAME).string();
+        std::vector<std::string> frames = read_ascii_cache(cache_path);
+        if (!frames.empty()) {
+            std::cout << "Cache hit: " << cache_path
+                      << " (" << frames.size() << " frames, skipping render)"
+                      << std::endl;
+            return 0;
+        }
+        std::cerr << "Warning: cache unreadable, regenerating..." << std::endl;
     }
 
     return preprocessvid(path, width, height, fps, output_path);
@@ -18,6 +35,8 @@ int main(int argc, char* argv[]) {
     // --height    (0 = auto, sin -h porque -h es --help)
     // -f --fps    (0 = original)
     // -v --version
+    // -o --output /path/to/output (default: hashed dir under $XDG_CACHE_HOME/loopfetch)
+
     argparse::ArgumentParser program("loopfetch", "0.1.0");
 
     program.add_argument("-p", "--path")
@@ -36,10 +55,10 @@ int main(int argc, char* argv[]) {
         .default_value(0)
         .scan<'i', int>();
     program.add_argument("-o", "--output")
-        .help("output dir for frames; ascii cache saved as <dir>/cache.ascii with '/J/' separators")
-        .default_value(std::string("./frames"));
+        .help("output dir for frames (default: hashed dir under $XDG_CACHE_HOME/loopfetch)")
+        .default_value(std::string(""));
 
-    try {
+        try {
         program.parse_args(argc, argv);
     } catch (const std::exception& err) {
         std::cerr << err.what() << std::endl;

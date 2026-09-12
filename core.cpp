@@ -1,8 +1,11 @@
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <vector>
 #include "core.hpp"
@@ -15,6 +18,64 @@ bool does_file_exist(const std::string& path) {
         return true;
     }
     return false;
+}
+
+std::string xdg_cache_base() {
+    const char* xdg = std::getenv("XDG_CACHE_HOME");
+    std::string base;
+    if (xdg && *xdg) {
+        base = xdg;
+    } else {
+        const char* home = std::getenv("HOME");
+        base = (home && *home) ? std::string(home) + "/.cache" : "/tmp";
+    }
+    return base + "/loopfetch";
+}
+
+std::string hash_key(const std::string& s) {
+    uint64_t h = 14695981039346656037ULL;
+    for (unsigned char c : s) {
+        h ^= c;
+        h *= 1099511628211ULL;
+    }
+    std::ostringstream oss;
+    oss << std::hex << std::setw(16) << std::setfill('0') << h;
+    return oss.str();
+}
+
+std::string cache_key_for(const std::string& video_path, int width, int height, int fps) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    std::string abs = fs::absolute(video_path, ec).string();
+    if (ec) abs = video_path;
+    ec.clear();
+    uint64_t sz = fs::file_size(video_path, ec);
+    if (ec) sz = 0;
+    ec.clear();
+    long long mtime = 0;
+    auto wt = fs::last_write_time(video_path, ec);
+    if (!ec) mtime = (long long)wt.time_since_epoch().count();
+    return abs + "|" + std::to_string(sz) + "|" + std::to_string(mtime)
+        + "|" + std::to_string(width) + "x" + std::to_string(height)
+        + "@" + std::to_string(fps) + "fps";
+}
+
+std::string cache_dir_for(const std::string& video_path, int width, int height, int fps) {
+    return xdg_cache_base() + "/" + hash_key(cache_key_for(video_path, width, height, fps));
+}
+
+bool is_cached(const std::string& output_dir, const std::string& key) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::path dir(output_dir);
+    uint64_t sz = fs::file_size(dir / CACHE_FILENAME, ec);
+    if (ec || sz == 0) return false;
+    std::ifstream kf(dir / CACHE_KEY_FILENAME);
+    if (!kf) return false;
+    std::string stored;
+    std::getline(kf, stored);
+    if (!stored.empty() && stored.back() == '\r') stored.pop_back();
+    return stored == key;
 }
 
 bool getvidres(const std::string& path, int& width, int& height) {
@@ -203,12 +264,18 @@ int preprocessvid(const std::string& path, int width, int height, int fps, std::
     }
 
     const std::string cache_path =
-        (std::filesystem::path(output_path) / "cache.ascii").string();
+        (std::filesystem::path(output_path) / CACHE_FILENAME).string();
     rc = video2ascii(output_path, ascii_w, ascii_h, cache_path);
     if (rc != 0) {
         return rc;
     }
     std::cout << "Cache ascii: " << cache_path << " (separador '" << FRAME_SEPARATOR << "')" << std::endl;
+    std::ofstream kf(std::filesystem::path(output_path) / CACHE_KEY_FILENAME, std::ios::trunc);
+    if (!kf) {
+        std::cerr << "Warning: could not write cache key file" << std::endl;
+    } else {
+        kf << cache_key_for(path, ascii_w, ascii_h, fps) << '\n';
+    }
     return 0;
 }
 
