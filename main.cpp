@@ -8,7 +8,6 @@
 int run_loopfetch(const std::string& path, int width, int height, int fps, std::string& output_path) {
     if (output_path.empty()) {
         output_path = cache_dir_for(path, width, height, fps);
-        std::cout << "Using cache dir: " << output_path << std::endl;
     }
 
     const std::string key = cache_key_for(path, width, height, fps);
@@ -25,7 +24,7 @@ int run_loopfetch(const std::string& path, int width, int height, int fps, std::
         }
         std::cerr << "Warning: cache unreadable, regenerating..." << std::endl;
     } else {
-        std::cout << "Cache miss (" << miss << "), rendering..." << std::endl;
+        std::cout << "Caching ascii..." << std::endl;
     }
 
     return preprocessvid(path, width, height, fps, output_path);

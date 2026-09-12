@@ -111,7 +111,6 @@ bool getvidres(const std::string& path, int& width, int& height) {
         std::cerr << "Error: ffprobe failed for: " << path << std::endl;
         return false;
     }
-    std::cout << "Probed dimensions: " << res;
     int probed_w = 0, probed_h = 0;
     if (std::sscanf(res.c_str(), "%dx%d", &probed_w, &probed_h) != 2) {
         std::cerr << "Error: could not parse ffprobe output: " << res << std::endl;
@@ -138,7 +137,6 @@ int saveframes(const std::string& path, int width, int height, int fps, const st
         command += " -r " + std::to_string(fps);
     }
     command += " \"" + output_dir + "/frame_%04d.png\"";
-    std::cout << "Running: " << command << std::endl;
     int rc = std::system(command.c_str());
     if (rc != 0) {
         std::cerr << "Error: ffmpeg failed with code " << rc << std::endl;
@@ -208,7 +206,6 @@ int video2ascii(const std::string& frames_dir, int ascii_width, int ascii_height
         return 1;
     }
 
-    size_t n = 0;
     for (const auto& f : frames) {
         std::string ascii = frame2ascii(f.string(), ascii_width, ascii_height);
         if (ascii.empty()) {
@@ -219,10 +216,8 @@ int video2ascii(const std::string& frames_dir, int ascii_width, int ascii_height
             out << '\n';
         }
         out << FRAME_SEPARATOR << '\n';
-        ++n;
     }
     out.close();
-    std::cout << "Wrote " << n << " ascii frames to cache: " << cache_path << std::endl;
     return 0;
 }
 
@@ -472,7 +467,6 @@ int preprocessvid(const std::string& path, int width, int height, int fps, std::
         } else {
             height = (int)std::lround((double)width * probed_h / probed_w);
         }
-        std::cout << "Auto dimensions: " << width << "x" << height << std::endl;
     }
     if (width <= 0 || height <= 0) {
         std::cerr << "Error: invalid dimensions: " << width << "x" << height << std::endl;
@@ -506,7 +500,6 @@ int preprocessvid(const std::string& path, int width, int height, int fps, std::
     if (rc != 0) {
         return rc;
     }
-    std::cout << "Cache ascii: " << cache_path << " (separador '" << FRAME_SEPARATOR << "')" << std::endl;
     std::ofstream kf(std::filesystem::path(output_path) / CACHE_KEY_FILENAME, std::ios::trunc);
     if (!kf) {
         std::cerr << "Warning: could not write cache key file" << std::endl;
