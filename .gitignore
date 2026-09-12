@@ -1,0 +1,4 @@
+*.o
+*.out
+/loopfetch
+*.mp4

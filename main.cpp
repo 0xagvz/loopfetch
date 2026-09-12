@@ -3,31 +3,41 @@
 #include "argparse/argparse.hpp"
 #include "core.hpp"
 
-int run_loopfetch(const std::string& path, int width, int height, int fps) {
-    return preprocessvid(path, width, height, fps, path);
+int run_loopfetch(const std::string& path, int width, int height, int fps, std::string& output_path) {
+    if (output_path.empty()) {
+        // Save in cache folder with hashed frame (to-do function)
+    }
+
+    return preprocessvid(path, width, height, fps, output_path);
 }
 
 int main(int argc, char* argv[]) {
-    // Arguments: 
-    // -p --path /path/to/vid
-    // -w --width 
-    // -h --height
-    // -f --fps
-    // --version
-    argparse::ArgumentParser program("AniFetchNative", "0.1.0");
+    // Arguments:
+    // -p --path /path/to/vid (required)
+    // --width  (0 = auto)
+    // --height    (0 = auto, sin -h porque -h es --help)
+    // -f --fps    (0 = original)
+    // -v --version
+    argparse::ArgumentParser program("loopfetch", "0.1.0");
 
     program.add_argument("-p", "--path")
         .help("/path/to/vid")
         .required();
-    program.add_argument("-w", "--width")
-        .help("output width")
+    program.add_argument("--width")
+        .help("output width (0 = auto)")
+        .default_value(0)
         .scan<'i', int>();
-    program.add_argument("-h", "--height")
-        .help("output height")
+    program.add_argument("--height")
+        .help("output height (0 = auto)")
+        .default_value(0)
         .scan<'i', int>();
     program.add_argument("-f", "--fps")
-        .help("frames per second")
+        .help("frames per second (0 = original)")
+        .default_value(0)
         .scan<'i', int>();
+    program.add_argument("-o", "--output")
+        .help("output dir for frames (default: ./frames)")
+        .default_value(std::string("./frames"));
 
     try {
         program.parse_args(argc, argv);
@@ -37,12 +47,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    run_loopfetch(
-        program.get<std::string>("--path"),
-        program.get<int>("--width"),
-        program.get<int>("--height"),
-        program.get<int>("--fps")
-    );
+    std::string path = program.get<std::string>("--path");
+    int width = program.get<int>("--width");
+    int height = program.get<int>("--height");
+    int fps = program.get<int>("--fps");
+    std::string output_path = program.get<std::string>("--output");
 
-    return 0;
+    return run_loopfetch(path, width, height, fps, output_path);
 }
