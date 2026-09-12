@@ -24,11 +24,11 @@ int main(int argc, char* argv[]) {
         .help("/path/to/vid")
         .required();
     program.add_argument("--width")
-        .help("output width (0 = auto)")
+        .help("output width (0 = auto; also ascii cols)")
         .default_value(0)
         .scan<'i', int>();
     program.add_argument("--height")
-        .help("output height (0 = auto)")
+        .help("output height (0 = auto; also ascii rows)")
         .default_value(0)
         .scan<'i', int>();
     program.add_argument("-f", "--fps")
@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
         .default_value(0)
         .scan<'i', int>();
     program.add_argument("-o", "--output")
-        .help("output dir for frames (default: ./frames)")
+        .help("output dir for frames; ascii cache saved as <dir>/cache.ascii with '/J/' separators")
         .default_value(std::string("./frames"));
 
     try {
