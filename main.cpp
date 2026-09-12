@@ -57,6 +57,29 @@ int main(int argc, char* argv[]) {
     program.add_argument("-o", "--output")
         .help("output dir for frames (default: hashed dir under $XDG_CACHE_HOME/loopfetch)")
         .default_value(std::string(""));
+    program.add_argument("-n", "--neofetch")
+        .help("use neofetch instead of fastfetch")
+        .default_value(false)
+        .implicit_value(true);
+    program.add_argument("--fetch-config")
+        .help("config file for fastfetch/neofetch")
+        .default_value(std::string(""));
+    program.add_argument("--top")
+        .help("empty rows on top of the layout")
+        .default_value(1)
+        .scan<'i', int>();
+    program.add_argument("--left")
+        .help("spaces on the left of the layout")
+        .default_value(4)
+        .scan<'i', int>();
+    program.add_argument("--gap")
+        .help("spaces between ascii and fetch text")
+        .default_value(2)
+        .scan<'i', int>();
+    program.add_argument("--loops")
+        .help("playback loops (0 = infinite)")
+        .default_value(0)
+        .scan<'i', int>();
 
         try {
         program.parse_args(argc, argv);
@@ -71,6 +94,26 @@ int main(int argc, char* argv[]) {
     int height = program.get<int>("--height");
     int fps = program.get<int>("--fps");
     std::string output_path = program.get<std::string>("--output");
+    bool use_neofetch = program.get<bool>("--neofetch");
+    std::string fetch_config = program.get<std::string>("--fetch-config");
+    int top = program.get<int>("--top");
+    int left_pad = program.get<int>("--left");
+    int gap = program.get<int>("--gap");
+    int loops = program.get<int>("--loops");
 
-    return run_loopfetch(path, width, height, fps, output_path);
+    int rc = run_loopfetch(path, width, height, fps, output_path);
+    if (rc != 0) return rc;
+
+    const std::string cache_path =
+        (std::filesystem::path(output_path) / CACHE_FILENAME).string();
+    std::vector<std::string> frames = read_ascii_cache(cache_path);
+    if (frames.empty()) {
+        std::cerr << "Error: no frames in cache: " << cache_path << std::endl;
+        return 1;
+    }
+    std::vector<std::string> fetch_lines = get_fetch_output(use_neofetch, fetch_config);
+    if (fetch_lines.empty()) {
+        std::cerr << "Warning: fetch output empty, playing ascii only" << std::endl;
+    }
+    return play_ascii_frames(frames, fetch_lines, fps, loops, top, left_pad, gap);
 }

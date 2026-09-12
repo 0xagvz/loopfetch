@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -7,6 +8,7 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 #include "core.hpp"
 #include <iostream>
@@ -114,7 +116,7 @@ int saveframes(const std::string& path, int width, int height, int fps, const st
         return 1;
     }
 
-    std::string command = "ffmpeg -y -i \"" + path + "\"";
+    std::string command = "ffmpeg -hide_banner -loglevel error -y -i \"" + path + "\"";
     if (width > 0 && height > 0) {
         command += " -vf scale=" + std::to_string(width) + ":" + std::to_string(height);
     }
@@ -234,6 +236,106 @@ std::vector<std::string> read_ascii_cache(const std::string& cache_path) {
         frames.push_back(current);
     }
     return frames;
+}
+
+static std::vector<std::string> split_lines(const std::string& s) {
+    std::vector<std::string> lines;
+    std::istringstream iss(s);
+    std::string line;
+    while (std::getline(iss, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        lines.push_back(line);
+    }
+    return lines;
+}
+
+std::vector<std::string> get_fetch_output(bool use_neofetch, const std::string& config) {
+    std::string cmd = use_neofetch ? "neofetch --off" : "fastfetch --logo none --pipe false";
+    if (!config.empty()) {
+        cmd += " --config \"" + config + "\"";
+    }
+    cmd += " 2>/dev/null";
+    std::string out;
+    if (!exec_capture(cmd, out)) {
+        std::cerr << "Error: fetch command failed: " << cmd << std::endl;
+        return {};
+    }
+    return split_lines(out);
+}
+
+std::string make_template_from_fetch_lines(const std::vector<std::string>& fetch_lines) {
+    std::string t;
+    for (size_t i = 0; i < fetch_lines.size(); ++i) {
+        if (i) t += '\n';
+        t += fetch_lines[i];
+    }
+    return t;
+}
+
+size_t visible_len(const std::string& s) {
+    size_t n = 0;
+    for (size_t i = 0; i < s.size();) {
+        if (s[i] == '\x1b' && i + 1 < s.size() && s[i + 1] == '[') {
+            i += 2;
+            while (i < s.size() && !((s[i] >= 'A' && s[i] <= 'Z') || (s[i] >= 'a' && s[i] <= 'z'))) {
+                ++i;
+            }
+            if (i < s.size()) ++i; // letra final del CSI
+        } else {
+            ++n;
+            ++i;
+        }
+    }
+    return n;
+}
+
+std::string render_frame(const std::vector<std::string>& ascii_lines, const std::vector<std::string>& fetch_lines, int top, int left_pad, int gap) {
+    size_t left_w = 0;
+    for (const auto& l : ascii_lines) {
+        left_w = std::max(left_w, visible_len(l));
+    }
+    const std::string pad_left(left_pad < 0 ? 0 : (size_t)left_pad, ' ');
+    const std::string pad_gap(gap < 0 ? 0 : (size_t)gap, ' ');
+    size_t rows = std::max(ascii_lines.size(), fetch_lines.size());
+    std::string out;
+    for (int i = 0; i < (top < 0 ? 0 : top); ++i) {
+        out += '\n';
+    }
+    for (size_t r = 0; r < rows; ++r) {
+        out += pad_left;
+        std::string left = r < ascii_lines.size() ? ascii_lines[r] : "";
+        out += left;
+        size_t vlen = visible_len(left);
+        if (vlen < left_w) {
+            out += std::string(left_w - vlen, ' ');
+        }
+        out += pad_gap;
+        if (r < fetch_lines.size()) {
+            out += fetch_lines[r];
+        }
+        out += '\n';
+    }
+    return out;
+}
+
+int play_ascii_frames(const std::vector<std::string>& frames, const std::vector<std::string>& fetch_lines, int fps, int loops, int top, int left_pad, int gap) {
+    if (frames.empty()) {
+        std::cerr << "Error: no frames to play" << std::endl;
+        return 1;
+    }
+    long usec = (fps > 0) ? 1000000L / fps : 100000L; // fps=0 -> 10 fps
+    if (usec < 20000) usec = 20000;
+    int loop = 0;
+    while (loops == 0 || loop < loops) {
+        for (const auto& f : frames) {
+            std::cout << "\033[2J\033[H"
+                      << render_frame(split_lines(f), fetch_lines, top, left_pad, gap)
+                      << std::flush;
+            std::this_thread::sleep_for(std::chrono::microseconds(usec));
+        }
+        ++loop;
+    }
+    return 0;
 }
 
 int preprocessvid(const std::string& path, int width, int height, int fps, std::string& output_path) {
