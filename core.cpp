@@ -46,6 +46,18 @@ std::string xdg_cache_base() {
     return base + "/loopfetch";
 }
 
+int clean_cache() {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    uintmax_t n = fs::remove_all(xdg_cache_base(), ec);
+    if (ec) {
+        std::cerr << "Error: could not clean cache: " << ec.message() << std::endl;
+        return 1;
+    }
+    std::cout << "Cache cleaned (" << n << " entries removed)" << std::endl;
+    return 0;
+}
+
 std::string hash_key(const std::string& s) {
     uint64_t h = 14695981039346656037ULL;
     for (unsigned char c : s) {

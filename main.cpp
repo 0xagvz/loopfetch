@@ -43,7 +43,7 @@ int main(int argc, char* argv[]) {
 
     program.add_argument("-p", "--path")
         .help("/path/to/vid")
-        .required();
+        .default_value(std::string(""));
     program.add_argument("--width")
         .help("output width (0 = auto; if alone, height follows aspect)")
         .default_value(0)
@@ -82,8 +82,12 @@ int main(int argc, char* argv[]) {
         .help("playback loops (0 = infinite)")
         .default_value(0)
         .scan<'i', int>();
+    program.add_argument("--clean")
+        .help("delete cached frames and exit")
+        .default_value(false)
+        .implicit_value(true);
 
-        try {
+    try {
         program.parse_args(argc, argv);
     } catch (const std::exception& err) {
         std::cerr << err.what() << std::endl;
@@ -102,6 +106,11 @@ int main(int argc, char* argv[]) {
     int left_pad = program.get<int>("--left");
     int gap = program.get<int>("--gap");
     int loops = program.get<int>("--loops");
+    bool do_clean = program.get<bool>("--clean");
+
+    if (do_clean) {
+        return clean_cache();
+    }
 
     int rc = run_loopfetch(path, width, height, fps, output_path);
     if (rc != 0) return rc;

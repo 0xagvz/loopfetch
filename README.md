@@ -14,14 +14,21 @@ Animated fetch written in c++ for `fastfetch`/`neofetch`.
 ## Compilate
 
 ```bash
-make # Compile
-make clean # Clean workspace
+make # compile
+make clean # clean workspace
+```
+
+## Install
+```bash
+sudo cp loopfetch /usr/local/bin/ # or
+sudo make install
 ```
 
 ## Use
 
 ```bash
-./loopfetch -p video.mp4                 # infinite loop
-./loopfetch -p video.mp4 --width 80     # width (or height)
-./loopfetch -p video.mp4 -n             # use neofetch instead of fastfetch
+loopfetch -p video.mp4                 # infinite loop
+loopfetch -p video.mp4 --width 80     # width (or height)
+loopfetch -p video.mp4 -n             # use neofetch instead of fastfetch
+loopfetch --clean # clean cache
 ```

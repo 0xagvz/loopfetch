@@ -17,4 +17,7 @@ $(TARGET): $(OBJ)
 clean:
 	rm -f $(OBJ) $(TARGET)
 
+install:
+	sudo cp $(TARGET) /usr/local/bin/
+
 .PHONY: all clean

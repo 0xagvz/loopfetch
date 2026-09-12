@@ -22,4 +22,5 @@ std::string make_template_from_fetch_lines(const std::vector<std::string>& fetch
 size_t visible_len(const std::string& s);
 std::string render_frame(const std::vector<std::string>& ascii_lines, const std::vector<std::string>& fetch_lines, int top, int left_pad, int gap);
 int play_ascii_frames(const std::vector<std::string>& frames, const std::vector<std::string>& fetch_lines, int fps, int loops, int top, int left_pad, int gap);
+int clean_cache();
 int preprocessvid(const std::string& path, int width, int height, int fps, std::string& output_path);
