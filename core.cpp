@@ -1,5 +1,7 @@
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -10,8 +12,17 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <termios.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
 #include "core.hpp"
 #include <iostream>
+
+namespace {
+volatile std::sig_atomic_t g_interrupted = 0;
+void on_sigint(int) { g_interrupted = 1; }
+}
 
 bool does_file_exist(const std::string& path) {
     FILE* file = std::fopen(path.c_str(), "r");
@@ -280,7 +291,7 @@ size_t visible_len(const std::string& s) {
             while (i < s.size() && !((s[i] >= 'A' && s[i] <= 'Z') || (s[i] >= 'a' && s[i] <= 'z'))) {
                 ++i;
             }
-            if (i < s.size()) ++i; // letra final del CSI
+            if (i < s.size()) ++i;
         } else {
             ++n;
             ++i;
@@ -318,22 +329,115 @@ std::string render_frame(const std::vector<std::string>& ascii_lines, const std:
     return out;
 }
 
+static std::string describe_key(const char* buf, ssize_t n) {
+    if (n <= 0) return "";
+    unsigned char c = static_cast<unsigned char>(buf[0]);
+    if (c == 27) return "ESC";
+    if (c >= 32 && c < 127) return std::string(1, static_cast<char>(c));
+    char tmp[8];
+    std::snprintf(tmp, sizeof tmp, "0x%02X", c);
+    return tmp;
+}
+
+static bool push_back_to_tty(const std::string& bytes) {
+    if (bytes.empty() || !isatty(STDIN_FILENO)) return false;
+    for (unsigned char c : bytes) {
+        if (ioctl(STDIN_FILENO, TIOCSTI, &c) != 0) return false;
+    }
+    return true;
+}
+
 int play_ascii_frames(const std::vector<std::string>& frames, const std::vector<std::string>& fetch_lines, int fps, int loops, int top, int left_pad, int gap) {
     if (frames.empty()) {
         std::cerr << "Error: no frames to play" << std::endl;
         return 1;
     }
-    long usec = (fps > 0) ? 1000000L / fps : 100000L; // fps=0 -> 10 fps
+    long usec = (fps > 0) ? 1000000L / fps : 100000L; 
     if (usec < 20000) usec = 20000;
+    g_interrupted = 0;
+
+    const bool in_tty = isatty(STDIN_FILENO);
+    const bool out_tty = isatty(STDOUT_FILENO);
+
+    struct termios saved{};
+    bool raw = false;
+    void (*old_handler)(int) = SIG_DFL;
+    if (in_tty && tcgetattr(STDIN_FILENO, &saved) == 0) {
+        struct termios r = saved;
+        r.c_lflag &= ~(ICANON | ECHO);
+        r.c_cc[VMIN] = 0;
+        r.c_cc[VTIME] = 0;
+        if (tcsetattr(STDIN_FILENO, TCSANOW, &r) == 0) {
+            raw = true;
+            old_handler = std::signal(SIGINT, on_sigint);
+            char tmp[64];
+            while (read(STDIN_FILENO, tmp, sizeof tmp) > 0) {}
+        }
+    }
+
+    auto restore_terminal = [&]() {
+        if (raw) {
+            tcsetattr(STDIN_FILENO, TCSANOW, &saved);
+            std::signal(SIGINT, old_handler);
+            raw = false;
+        }
+        if (out_tty) std::cout << "\033[?25h" << std::flush; 
+    };
+
+    const std::string clear = out_tty ? "\033[2J\033[H" : "";
+    if (out_tty) std::cout << "\033[2J\033[3J\033[H" << std::flush;
+
+    std::string last_key;
+    std::string pressed;
+    bool quit = false;
     int loop = 0;
-    while (loops == 0 || loop < loops) {
+    while ((loops == 0 || loop < loops) && !quit && !g_interrupted) {
         for (const auto& f : frames) {
-            std::cout << "\033[2J\033[H"
-                      << render_frame(split_lines(f), fetch_lines, top, left_pad, gap)
-                      << std::flush;
-            std::this_thread::sleep_for(std::chrono::microseconds(usec));
+            std::string screen = render_frame(split_lines(f), fetch_lines, top, left_pad, gap);
+            std::cout << clear << screen << std::flush;
+            long remaining = usec;
+            while (remaining > 0 && !quit && !g_interrupted) {
+                if (!raw) {
+                    std::this_thread::sleep_for(std::chrono::microseconds(remaining));
+                    remaining = 0;
+                } else {
+                    long step = std::min(remaining, 50000L);
+                    fd_set rfds;
+                    FD_ZERO(&rfds);
+                    FD_SET(STDIN_FILENO, &rfds);
+                    struct timeval tv{static_cast<time_t>(step / 1000000),
+                                      static_cast<suseconds_t>(step % 1000000)};
+                    int r = select(STDIN_FILENO + 1, &rfds, nullptr, nullptr, &tv);
+                    if (r < 0) {
+                        if (errno == EINTR) continue;
+                        remaining = 0;
+                    } else if (r == 0) {
+                        remaining -= step;
+                    } else {
+                        char buf[16];
+                        ssize_t n = read(STDIN_FILENO, buf, sizeof buf);
+                        if (n > 0) {
+                            pressed.assign(buf, (size_t)n);
+                            last_key = describe_key(buf, n);
+                            quit = true;
+                        }
+                    }
+                }
+            }
+            if (quit || g_interrupted) break;
         }
         ++loop;
+    }
+
+    restore_terminal();
+    if (g_interrupted) {
+        std::cout << "\n[interrupted]" << std::endl;
+        return 130;
+    }
+    if (quit) {
+        if (!push_back_to_tty(pressed)) {
+            std::cout << "[key: " + last_key + "]" << std::endl;
+        }
     }
     return 0;
 }
