@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <cmath>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
@@ -77,18 +78,20 @@ std::string cache_dir_for(const std::string& video_path, int width, int height, 
     return xdg_cache_base() + "/" + hash_key(cache_key_for(video_path, width, height, fps));
 }
 
-bool is_cached(const std::string& output_dir, const std::string& key) {
+std::string cache_miss_reason(const std::string& output_dir, const std::string& key) {
     namespace fs = std::filesystem;
     std::error_code ec;
     fs::path dir(output_dir);
     uint64_t sz = fs::file_size(dir / CACHE_FILENAME, ec);
-    if (ec || sz == 0) return false;
+    if (ec) return "no cache.ascii";
+    if (sz == 0) return "empty cache.ascii";
     std::ifstream kf(dir / CACHE_KEY_FILENAME);
-    if (!kf) return false;
+    if (!kf) return "no key file (cache from older version?)";
     std::string stored;
     std::getline(kf, stored);
     if (!stored.empty() && stored.back() == '\r') stored.pop_back();
-    return stored == key;
+    if (stored != key) return "key mismatch (video or params changed)";
+    return "";
 }
 
 bool getvidres(const std::string& path, int& width, int& height) {
@@ -431,12 +434,11 @@ int play_ascii_frames(const std::vector<std::string>& frames, const std::vector<
 
     restore_terminal();
     if (g_interrupted) {
-        std::cout << "\n[interrupted]" << std::endl;
         return 130;
     }
     if (quit) {
         if (!push_back_to_tty(pressed)) {
-            std::cout << "[key: " + last_key + "]" << std::endl;
+            return 0;
         }
     }
     return 0;
@@ -448,16 +450,45 @@ int preprocessvid(const std::string& path, int width, int height, int fps, std::
         return 1;
     }
 
-    const int ascii_w = width;
-    const int ascii_h = height;
+    int ascii_w_in = width;
+    int ascii_h_in = height;
 
-    if (!width || !height) {
+    if (width <= 0 && height <= 0) {
+        if (!getvidres(path, width, height)) {
+            return 1;
+        }
+    } else if (width <= 0 || height <= 0) {
         int probed_w = 0, probed_h = 0;
         if (!getvidres(path, probed_w, probed_h)) {
             return 1;
         }
-        if (!width) width = probed_w;
-        if (!height) height = probed_h;
+        if (probed_w <= 0 || probed_h <= 0) {
+            std::cerr << "Error: invalid probed dimensions: "
+                      << probed_w << "x" << probed_h << std::endl;
+            return 1;
+        }
+        if (width <= 0) {
+            width = (int)std::lround((double)height * probed_w / probed_h);
+        } else {
+            height = (int)std::lround((double)width * probed_h / probed_w);
+        }
+        std::cout << "Auto dimensions: " << width << "x" << height << std::endl;
+    }
+    if (width <= 0 || height <= 0) {
+        std::cerr << "Error: invalid dimensions: " << width << "x" << height << std::endl;
+        return 1;
+    }
+
+    int ascii_w = ascii_w_in;
+    int ascii_h = ascii_h_in;
+    if ((ascii_w <= 0) != (ascii_h <= 0)) {
+        if (ascii_w <= 0) {
+            ascii_w = (int)std::lround((double)ascii_h * width / height);
+        } else {
+            ascii_h = (int)std::lround((double)ascii_w * height / width);
+        }
+        if (ascii_w <= 0) ascii_w = 1;
+        if (ascii_h <= 0) ascii_h = 1;
     }
 
     if (output_path.empty() || output_path == path) {
@@ -480,7 +511,7 @@ int preprocessvid(const std::string& path, int width, int height, int fps, std::
     if (!kf) {
         std::cerr << "Warning: could not write cache key file" << std::endl;
     } else {
-        kf << cache_key_for(path, ascii_w, ascii_h, fps) << '\n';
+        kf << cache_key_for(path, ascii_w_in, ascii_h_in, fps) << '\n';
     }
     return 0;
 }

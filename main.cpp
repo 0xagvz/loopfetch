@@ -12,7 +12,8 @@ int run_loopfetch(const std::string& path, int width, int height, int fps, std::
     }
 
     const std::string key = cache_key_for(path, width, height, fps);
-    if (is_cached(output_path, key)) {
+    const std::string miss = cache_miss_reason(output_path, key);
+    if (miss.empty()) {
         const std::string cache_path =
             (std::filesystem::path(output_path) / CACHE_FILENAME).string();
         std::vector<std::string> frames = read_ascii_cache(cache_path);
@@ -23,6 +24,8 @@ int run_loopfetch(const std::string& path, int width, int height, int fps, std::
             return 0;
         }
         std::cerr << "Warning: cache unreadable, regenerating..." << std::endl;
+    } else {
+        std::cout << "Cache miss (" << miss << "), rendering..." << std::endl;
     }
 
     return preprocessvid(path, width, height, fps, output_path);
@@ -43,11 +46,11 @@ int main(int argc, char* argv[]) {
         .help("/path/to/vid")
         .required();
     program.add_argument("--width")
-        .help("output width (0 = auto; also ascii cols)")
+        .help("output width (0 = auto; if alone, height follows aspect)")
         .default_value(0)
         .scan<'i', int>();
     program.add_argument("--height")
-        .help("output height (0 = auto; also ascii rows)")
+        .help("output height (0 = auto; if alone, width follows aspect)")
         .default_value(0)
         .scan<'i', int>();
     program.add_argument("-f", "--fps")
